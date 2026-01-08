@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>Live@8481 - National E-Paper</title>
+    <!-- Load jsPDF Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        /* --- RESET & BASIC SETUP --- */
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        
+        body {
+            background-color: #f4f4f4;
+            font-family: 'Segoe UI', sans-serif;
+            min-height: 100vh;
+            width: 100vw;
+            display: flex; flex-direction: column; align-items: center;
+            user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+        }
+
+        /* --- 1. TOP HEADER --- */
+        .top-header {
+            width: 100%;
+            height: 65px;
+            background: #ffffff;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            position: fixed; top: 0; z-index: 800;
+            border-bottom: 3px solid #D50000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+
+        .header-hidden { transform: translateY(-110%); }
+
+        .header-title {
+            font-family: 'Georgia', 'Times New Roman', serif;
+            font-size: 22px; font-weight: 900;
+            color: #D50000; text-transform: uppercase; letter-spacing: 1px;
+        }
+
+        .header-date-row {
+            display: flex; align-items: center; gap: 8px; margin-top: 2px;
+        }
+
+        .header-date {
+            font-size: 10px; color: #555; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.5px;
+        }
+
+        /* Invisible Date Picker */
+        #datePickerWrapper { position: relative; width: 20px; height: 20px; overflow: hidden; }
+        #datePickerIcon { font-size: 14px; cursor: pointer; }
+        #datePicker { 
+            position: absolute; top: 0; left: 0; opacity: 0; 
+            width: 100%; height: 100%; cursor: pointer; 
+        }
+
+        /* HD SWITCH */
+        .hd-container {
+            display: flex; align-items: center; gap: 5px; margin-left: 10px;
+            border-left: 1px solid #ddd; padding-left: 10px;
+        }
+        .hd-label { font-size: 10px; font-weight: bold; color: #D50000; }
+        .switch { position: relative; display: inline-block; width: 30px; height: 16px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider {
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #ccc; transition: .4s; border-radius: 34px;
+        }
+        .slider:before {
+            position: absolute; content: ""; height: 12px; width: 12px; left: 2px; bottom: 2px;
+            background-color: white; transition: .4s; border-radius: 50%;
+        }
+        input:checked + .slider { background-color: #D50000; }
+        input:checked + .slider:before { transform: translateX(14px); }
+
+        /* --- 2. VIEWER CONTAINER --- */
+        #paper-container {
+            width: 100%; max-width: 900px;
+            display: flex; flex-direction: column; gap: 15px;
+            padding: 15px 0; padding-top: 80px; 
+            min-height: 50vh;
+        }
+
+        .page-wrapper {
+            position: relative; background: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            min-height: 400px; /* Essential for browser to lazy load */
+            display: flex; 
+            align-items: center; justify-content: center;
+        }
+
+        .hq-image { 
+            width: 100%; height: auto; display: block; 
+            background: #eee; pointer-events: none;
+            transition: opacity 0.3s;
+            opacity: 0;
+        }
+        .hq-image.loaded { opacity: 1; }
+
+        .page-badge {
+            position: absolute; top: 10px; right: 10px;
+            background: rgba(0,0,0,0.7); color: white;
+            padding: 4px 8px; font-size: 11px; font-weight: bold; border-radius: 4px;
+            opacity: 0; transition: opacity 0.3s ease;
+        }
+        .page-badge.visible { opacity: 1; }
+
+        /* HD BUFFERING OVERLAY */
+        .hd-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255,255,255,0.8);
+            backdrop-filter: blur(3px);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            z-index: 10;
+        }
+        .hd-spinner {
+            width: 35px; height: 35px; border: 4px solid #eee;
+            border-top: 4px solid #D50000; border-radius: 50%;
+            animation: spin 1s linear infinite; margin-bottom: 10px;
+        }
+        .hd-text {
+            background: #D50000; color: white; padding: 5px 12px;
+            border-radius: 15px; font-size: 12px; font-weight: bold;
+            box-shadow: 0 2px 8px rgba(213,0,0,0.2);
+        }
+
+        /* --- 3. FOOTER CARD --- */
+        .footer-card {
+            width: 95%; max-width: 900px;
+            background: white;
+            margin: 20px 0 50px 0; 
+            padding: 30px 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            display: none; 
+            flex-direction: column; align-items: center; gap: 20px;
+            text-align: center;
+        }
+
+        .branding-text { color: #555; font-size: 14px; font-weight: 700; }
+        
+        .sting-text {
+            font-family: 'Arial', sans-serif; font-style: italic; font-weight: 900;
+            animation: sting 2.5s infinite linear;
+            display: inline-block; margin-left: 5px;
+        }
+        @keyframes sting {
+            0%,100% { color: #D50000; text-shadow: 0 0 5px rgba(213,0,0,0.2); }
+            50% { color: #0047AB; text-shadow: 0 0 5px rgba(0,71,171,0.2); }
+        }
+
+        .button-group { display: flex; gap: 15px; flex-wrap: wrap; justify-content: center; width: 100%; }
+        
+        .action-btn {
+            border: none; padding: 12px 24px; border-radius: 30px;
+            font-size: 14px; font-weight: bold;
+            display: flex; align-items: center; gap: 8px;
+            cursor: pointer; transition: transform 0.2s; color: white; min-width: 160px; justify-content: center;
+        }
+        .action-btn:active { transform: scale(0.95); }
+
+        .btn-district { background: #444; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
+        .btn-pdf { background: linear-gradient(135deg, #D50000, #b70000); box-shadow: 0 4px 10px rgba(213, 0, 0, 0.3); }
+        .btn-default { 
+            background: white; border: 2px solid #D50000; color: #D50000; 
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+        }
+        .btn-default.active { background: #D50000; color: white; }
+
+        /* --- 4. MODALS & LOADERS --- */
+        #district-modal, #progress-modal, #loader, #error-container, #no-internet, #custom-alert {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        }
+
+        /* LOADER */
+        #loader { background: white; z-index: 2000; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .spinner { width: 40px; height: 40px; border: 4px solid #eee; border-top: 4px solid #D50000; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 15px; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        #status-text { font-weight: bold; color: #555; text-align: center; transition: all 0.3s; }
+
+        /* BEAUTIFUL NO INTERNET UI */
+        #no-internet { 
+            display: none; flex-direction: column; align-items: center; justify-content: center; 
+            z-index: 2500; background:#fff;
+        }
+        .offline-box {
+            text-align: center; padding: 40px;
+        }
+        .offline-icon { font-size: 80px; margin-bottom: 20px; animation: float 3s ease-in-out infinite; }
+        @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
+        
+        .offline-title { font-size: 24px; font-weight: 800; color: #333; margin-bottom: 10px; }
+        .offline-desc { font-size: 15px; color: #666; margin-bottom: 30px; line-height: 1.5; }
+        
+        /* ERROR SCREEN */
+        #error-container { display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 500; background:#f0f2f5;}
+        .error-card { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; width: 90%; max-width: 400px; }
+        .retry-btn { background: #333; color: white; padding: 12px 25px; border: none; border-radius: 30px; font-weight: bold; cursor: pointer; margin-top:20px;}
+
+        /* PDF PROGRESS */
+        #progress-modal { background: rgba(0,0,0,0.9); z-index: 10000; display: none; flex-direction: column; align-items: center; justify-content: center; color: white; text-align: center; }
+        .progress-box { background: #222; padding: 30px; border-radius: 12px; width: 85%; max-width: 320px; }
+        .progress-track { width: 100%; height: 8px; background: #444; border-radius: 10px; overflow: hidden; margin-bottom: 10px; }
+        .progress-fill { height: 100%; background: #00e676; width: 0%; transition: width 0.3s ease; }
+
+        /* DISTRICT LIST */
+        #district-modal { background: #f8f9fa; z-index: 10001; display: none; flex-direction: column; }
+        .modal-header {
+            height: 60px; background: white; border-bottom: 1px solid #e0e0e0;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 20px; font-size: 18px; font-weight: 800; color: #333;
+        }
+        .close-iframe-btn { background: #D50000; border: none; color: white; padding: 5px 15px; border-radius: 5px; font-weight: bold; }
+        .modal-body { flex: 1; overflow-y: auto; padding: 15px; }
+        
+        .list-item {
+            background: white; padding: 16px; margin-bottom: 10px;
+            border-radius: 8px; border-left: 4px solid #D50000;
+            font-weight: 600; font-size: 15px; color: #333;
+            display: flex; justify-content: space-between; align-items: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05); cursor: pointer;
+        }
+        .list-item:active { background: #eee; }
+
+        /* CUSTOM ALERT */
+        #custom-alert {
+            z-index: 12000; background: rgba(0,0,0,0.6);
+            display: none; align-items: center; justify-content: center;
+        }
+        .alert-box {
+            background: white; width: 85%; max-width: 320px;
+            padding: 25px; border-radius: 15px; text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2); animation: popIn 0.3s ease;
+        }
+        @keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .alert-btn {
+            background: #D50000; color: white; border: none; padding: 10px 30px;
+            border-radius: 25px; font-weight: bold; cursor: pointer; font-size: 14px;
+        }
+
+    </style>
+</head>
+<body oncontextmenu="return false">
+
+    <!-- LOADER -->
+    <div id="loader">
+        <div class="spinner"></div>
+        <div id="status-text">Connecting Ayush@8481 Server...</div>
+    </div>
+
+    <!-- BEAUTIFUL NO NETWORK UI -->
+    <div id="no-internet">
+        <div class="offline-box">
+            <div class="offline-icon">📡</div>
+            <div class="offline-title">oops! No Internet</div>
+            <div class="offline-desc">
+                Your connection seems to be offline.<br>
+                Please check your Wi-Fi or data settings.
+            </div>
+            <button class="retry-btn" onclick="checkNetAndReload()">Retry Connection</button>
+        </div>
+    </div>
+
+    <header class="top-header" id="smartHeader">
+        <div class="header-title" id="edition-title">NAVBHARAT TIMES</div>
+        <div class="header-date-row">
+            <div class="header-date" id="headerDate">Loading...</div>
+            <div id="datePickerWrapper">
+                <span id="datePickerIcon">📅</span>
+                <input type="date" id="datePicker" onchange="onDateChanged()">
+            </div>
+            
+            <div class="hd-container">
+                <span class="hd-label">HD</span>
+                <label class="switch">
+                    <input type="checkbox" id="hdSwitch" onchange="toggleHD()">
+                    <span class="slider round"></span>
+                </label>
+            </div>
+        </div>
+    </header>
+
+    <div id="error-container">
+        <div class="error-card">
+            <div style="font-size:50px; margin-bottom:15px;">🗞️</div>
+            <div style="font-size:20px; font-weight:bold; color:#333; margin-bottom:10px;">Not Published Yet</div>
+            <div style="font-size:14px; color:#666; line-height:1.5;">
+                Edition for <b id="err-name">District</b> on <b id="err-date">Date</b> unavailable.
+            </div>
+            <button class="retry-btn" onclick="openDistrictModal()">Change District</button>
+            <button class="retry-btn" style="background:#D50000; margin-top:10px;" onclick="resetToToday()">Go to Today</button>
+        </div>
+    </div>
+
+    <div id="district-modal">
+        <div class="modal-header">
+            <span id="modal-title">Select Edition</span>
+            <button class="close-iframe-btn" onclick="closeDistrictModal()">Close X</button>
+        </div>
+        <div class="modal-body" id="modal-list"></div>
+    </div>
+
+    <div id="progress-modal">
+        <div class="progress-box">
+            <div style="font-size:18px; font-weight:bold; margin-bottom:20px;">Generating PDF</div>
+            <span style="font-size:28px; font-weight:bold; display:block; margin-bottom:5px;" id="prog-pct">0%</span>
+            <div class="progress-track"><div class="progress-fill" id="prog-bar"></div></div>
+            <div style="font-size:13px; color:#ccc;" id="prog-details">Checking Pages...</div>
+        </div>
+    </div>
+
+    <div id="custom-alert">
+        <div class="alert-box">
+            <div class="alert-icon">🔔</div>
+            <div class="alert-msg" id="alert-text"></div>
+            <button class="alert-btn" onclick="closeCustomAlert()">OK</button>
+        </div>
+    </div>
+
+    <div id="paper-container"></div>
+
+    <div class="footer-card" id="main-footer">
+        <div class="branding-text">Developed By <span class="sting-text">Ayush@8481</span></div>
+        <div class="button-group">
+            <button class="action-btn btn-district" onclick="openDistrictModal()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M12,2C15.31,2 18,4.66 18,7.95C18,12.41 12,19 12,19C12,19 6,12.41 6,7.95C6,4.66 8.69,2 12,2M12,6A2,2 0 0,0 10,8A2,2 0 0,0 12,10A2,2 0 0,0 14,8A2,2 0 0,0 12,6M20,19C20,21.21 16.42,23 12,23C7.58,23 4,21.21 4,19C4,17.71 5.22,16.56 7.11,15.83L7.75,16.74C6.67,17.19 6,17.81 6,18.5C6,19.88 8.69,21 12,21C15.31,21 18,19.88 18,18.5C18,17.81 17.33,17.19 16.25,16.74L16.89,15.83C18.78,16.56 20,17.71 20,19Z" /></svg>
+                Districtwise
+            </button>
+            <button class="action-btn btn-pdf" id="downloadBtn" onclick="generatePDF()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z" /></svg>
+                Download PDF
+            </button>
+            <button class="action-btn btn-default" id="defaultBtn" onclick="toggleDefault()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12,21.35L10.55,20.03C5.4,15.36 2,12.27 2,8.5C2,5.41 4.42,3 7.5,3C9.24,3 10.91,3.81 12,5.08C13.09,3.81 14.76,3 16.5,3C19.58,3 22,5.41 22,8.5C22,12.27 18.6,15.36 13.45,20.03L12,21.35Z" /></svg>
+                Set Default
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const { jsPDF } = window.jspdf;
+
+        const ALL_EDITIONS = [
+            {n:"Delhi City", c:"md-de"},
+            {n:"Sandhya Times", c:"md-st"},
+            {n:"Noida", c:"md-ncr"},
+            {n:"Ghaziabad", c:"md-ga"},
+            {n:"Faridabad", c:"md-fr"},
+            {n:"Gurugram", c:"md-gu"},
+            {n:"Mumbai City", c:"md-mb"},
+            {n:"Lucknow/Kanpur", c:"md-hr"}
+        ];
+
+        let currentCode = "md-de";
+        let currentName = "Delhi City";
+        let currentDate = new Date();
+        let paperPages = []; 
+        let scrollTimer;
+        let isHDMode = false;
+
+        window.addEventListener('load', () => {
+            cleanUpStorage();
+            const todayISO = new Date().toISOString().split('T')[0];
+            const picker = document.getElementById('datePicker');
+            picker.value = todayISO;
+            picker.max = todayISO;
+            
+            const savedCode = localStorage.getItem('ayush_default_code');
+            const savedName = localStorage.getItem('ayush_default_name');
+            if(savedCode && savedName) {
+                currentCode = savedCode;
+                currentName = savedName;
+                updateDefaultUI(true);
+            }
+
+            // INSTANT OFFLINE CHECK
+            if(!navigator.onLine) {
+                document.getElementById('loader').style.display = 'none';
+                document.getElementById('no-internet').style.display = 'flex';
+                return; // Stop loading logic
+            }
+
+            loadPaper();
+
+            const header = document.getElementById('smartHeader');
+            let lastY = 0;
+            window.addEventListener('scroll', () => {
+                const y = window.scrollY;
+                if(y > 80 && y > lastY) header.classList.add('header-hidden');
+                else header.classList.remove('header-hidden');
+                lastY = y;
+                const badges = document.querySelectorAll('.page-badge');
+                badges.forEach(b => b.classList.add('visible'));
+                clearTimeout(scrollTimer);
+                scrollTimer = setTimeout(() => {
+                    badges.forEach(b => b.classList.remove('visible'));
+                }, 1000);
+            });
+        });
+
+        window.addEventListener('online', () => {
+             if(document.getElementById('no-internet').style.display === 'flex') {
+                 document.getElementById('no-internet').style.display = 'none';
+                 loadPaper();
+             }
+        });
+
+        function checkNetAndReload() {
+            if(navigator.onLine) {
+                document.getElementById('no-internet').style.display = 'none';
+                loadPaper();
+            } else {
+                showCustomAlert("Still Offline. Check Connection.");
+            }
+        }
+
+        function cleanUpStorage() {
+            const keysToKeep = ['ayush_default_code', 'ayush_default_name'];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (!keysToKeep.includes(key)) {
+                    localStorage.removeItem(key);
+                }
+            }
+        }
+
+        function getNBTDate() {
+            const d = String(currentDate.getDate()).padStart(2,'0');
+            const m = String(currentDate.getMonth() + 1).padStart(2,'0');
+            const y = currentDate.getFullYear();
+            return `${d}${m}${y}`;
+        }
+
+        function getHeaderDateStr() {
+            return currentDate.toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        }
+
+        function onDateChanged() {
+            const val = document.getElementById('datePicker').value;
+            if(!val) return;
+            currentDate = new Date(val);
+            if(navigator.onLine) loadPaper();
+            else showCustomAlert("No Internet Connection");
+        }
+
+        function resetToToday() {
+            const today = new Date();
+            document.getElementById('datePicker').value = today.toISOString().split('T')[0];
+            currentDate = today;
+            loadPaper();
+        }
+
+        function toggleHD() {
+            const checkBox = document.getElementById('hdSwitch');
+            isHDMode = checkBox.checked;
+
+            if(!navigator.onLine) {
+                checkBox.checked = !isHDMode;
+                isHDMode = !isHDMode;
+                showCustomAlert("Cannot switch HD mode while offline.");
+                return;
+            }
+
+            if(paperPages.length === 0) return;
+
+            if(isHDMode) {
+                showCustomAlert("Switching to HD.. It consumes high internet");
+                upgradePagesSequence(0);
+            } else {
+                // Switching OFF HD -> Reload to SD
+                loadPaper();
+            }
+        }
+
+        // --- FIXED SEQUENTIAL HD SWAP ---
+        function upgradePagesSequence(index) {
+            if(index >= paperPages.length) return;
+
+            const pageObj = paperPages[index];
+            const wrapper = pageObj.wrapper;
+            const currentImg = pageObj.el;
+            const pageNum = pageObj.num;
+
+            // Generate HD Target URL
+            const dateStr = getNBTDate();
+            const baseUrl = `https://image.mepaper.navbharattimes.com/epaperimages//${dateStr}//${dateStr}-${currentCode}-`;
+            const rawUrl = `${baseUrl}${pageNum}.pdf`;
+            const proxyUrl = `https://images.weserv.nl/?url=${encodeURIComponent(rawUrl)}&w=2800&maxage=1d&output=jpg&q=80`;
+
+            // CHECK: IS IT ALREADY HD? (Skip logic)
+            // Note: We check if src ends with the query part or if we can detect it.
+            // Simpler: Just check if the current src is roughly the same.
+            // Better: Just proceed. If cached, onload fires instantly.
+            
+            if(currentImg.src === proxyUrl) {
+                // Already HD, skip delay, move next
+                upgradePagesSequence(index + 1);
+                return;
+            }
+
+            // Add Overlay
+            let overlay = wrapper.querySelector('.hd-overlay');
+            if(!overlay) {
+                overlay = document.createElement('div');
+                overlay.className = 'hd-overlay';
+                overlay.innerHTML = `
+                    <div class="hd-spinner"></div>
+                    <div class="hd-text">Loading HD...</div>
+                `;
+                wrapper.appendChild(overlay);
+            }
+
+            const newImg = new Image();
+            newImg.crossOrigin = "Anonymous";
+
+            // Safety timeout 10s
+            const safeTimer = setTimeout(() => {
+                if(overlay) overlay.remove();
+                upgradePagesSequence(index + 1);
+            }, 10000);
+
+            newImg.onload = function() {
+                clearTimeout(safeTimer);
+                currentImg.src = proxyUrl;
+                currentImg.crossOrigin = "Anonymous";
+                
+                const badge = wrapper.querySelector('.page-badge');
+                if(badge) badge.style.background = '#D50000';
+                
+                if(overlay) overlay.remove();
+                
+                // STRICT SEQUENCE: Only call next after this one finishes
+                upgradePagesSequence(index + 1);
+            };
+
+            newImg.onerror = function() {
+                clearTimeout(safeTimer);
+                if(overlay) overlay.remove();
+                upgradePagesSequence(index + 1);
+            };
+
+            newImg.src = proxyUrl;
+        }
+
+        function loadPaper() {
+            const loader = document.getElementById('loader');
+            const status = document.getElementById('status-text');
+            const errorDiv = document.getElementById('error-container');
+            const container = document.getElementById('paper-container');
+            const footer = document.getElementById('main-footer');
+            const netError = document.getElementById('no-internet');
+
+            loader.style.display = 'flex';
+            errorDiv.style.display = 'none';
+            netError.style.display = 'none';
+            footer.style.display = 'none';
+            container.innerHTML = '';
+            paperPages = [];
+
+            document.getElementById('edition-title').innerText = currentName.toUpperCase();
+            document.getElementById('headerDate').innerText = getHeaderDateStr();
+
+            status.innerText = "Connecting Ayush@8481 Server...";
+            const textTimer = setTimeout(() => {
+                if(loader.style.display !== 'none') {
+                    status.innerText = "Loading E-Paper...";
+                }
+            }, 2000);
+
+            const dateStr = getNBTDate();
+            const baseUrl = `https://image.mepaper.navbharattimes.com/epaperimages//${dateStr}//${dateStr}-${currentCode}-`;
+            const ext = isHDMode ? '.pdf' : '.jpg';
+
+            // Load Page 1
+            createPage(1, baseUrl, ext, true, textTimer);
+
+            // Load 2-35
+            setTimeout(() => {
+                for(let i=2; i<=35; i++) {
+                    createPage(i, baseUrl, ext, false, null);
+                }
+            }, 300);
+        }
+
+        function createPage(pageNum, baseUrl, ext, isFirst, timerId) {
+            const container = document.getElementById('paper-container');
+            
+            const div = document.createElement('div');
+            div.className = 'page-wrapper';
+            div.id = `wrap-${pageNum}`;
+
+            const img = document.createElement('img');
+            img.className = 'hq-image';
+            img.alt = `Page ${pageNum}`;
+            img.crossOrigin = "Anonymous";
+
+            const q = isHDMode ? 80 : 60;
+            const w = isHDMode ? 2800 : 1200;
+            const rawUrl = `${baseUrl}${pageNum}${ext}`;
+            const proxyUrl = `https://images.weserv.nl/?url=${encodeURIComponent(rawUrl)}&w=${w}&maxage=1d&output=jpg&q=${q}`;
+
+            img.src = proxyUrl;
+            if(!isFirst) img.loading = "lazy";
+
+            img.onload = function() {
+                paperPages.push({ num: pageNum, el: img, wrapper: div });
+
+                img.classList.add('loaded');
+                
+                const badge = document.createElement('div');
+                badge.className = 'page-badge';
+                badge.innerText = `PG ${pageNum}`;
+                if(isHDMode) badge.style.background = '#D50000';
+                div.appendChild(badge);
+
+                if(isFirst) {
+                    clearTimeout(timerId);
+                    document.getElementById('loader').style.display = 'none';
+                    document.getElementById('main-footer').style.display = 'flex';
+                }
+            };
+
+            img.onerror = function() {
+                if(isFirst) {
+                    clearTimeout(timerId);
+                    document.getElementById('loader').style.display = 'none';
+                    if(navigator.onLine) {
+                        document.getElementById('err-name').innerText = currentName;
+                        document.getElementById('err-date').innerText = getHeaderDateStr();
+                        document.getElementById('error-container').style.display = 'flex';
+                    } else {
+                        document.getElementById('no-internet').style.display = 'flex';
+                    }
+                } else {
+                    div.remove();
+                }
+            };
+
+            div.appendChild(img);
+            container.appendChild(div);
+        }
+
+        function openDistrictModal() {
+            document.getElementById('district-modal').style.display = 'flex';
+            const list = document.getElementById('modal-list');
+            list.innerHTML = '';
+            
+            ALL_EDITIONS.forEach(ed => {
+                const item = document.createElement('div');
+                item.className = 'list-item';
+                item.innerHTML = `<span>${ed.n}</span><span style="color:#D50000; font-weight:bold;">➤</span>`;
+                item.onclick = () => { selectDistrict(ed.c, ed.n); };
+                list.appendChild(item);
+            });
+        }
+
+        function closeDistrictModal() {
+            document.getElementById('district-modal').style.display = 'none';
+        }
+
+        function selectDistrict(code, name) {
+            currentCode = code;
+            currentName = name;
+            closeDistrictModal();
+            window.scrollTo(0,0);
+            loadPaper();
+        }
+
+        function toggleDefault() {
+            const btn = document.getElementById('defaultBtn');
+            if(btn.classList.contains('active')) {
+                localStorage.removeItem('ayush_default_code');
+                localStorage.removeItem('ayush_default_name');
+                updateDefaultUI(false);
+                showCustomAlert("Default preference removed.");
+            } else {
+                localStorage.setItem('ayush_default_code', currentCode);
+                localStorage.setItem('ayush_default_name', currentName);
+                updateDefaultUI(true);
+                showCustomAlert("By setting this Edition as default, you can see this edition daily at main page.");
+            }
+        }
+
+        function updateDefaultUI(active) {
+            const btn = document.getElementById('defaultBtn');
+            if(active) {
+                btn.classList.add('active');
+                btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12,21.35L10.55,20.03C5.4,15.36 2,12.27 2,8.5C2,5.41 4.42,3 7.5,3C9.24,3 10.91,3.81 12,5.08C13.09,3.81 14.76,3 16.5,3C19.58,3 22,5.41 22,8.5C22,12.27 18.6,15.36 13.45,20.03L12,21.35Z" /></svg> Saved Default`;
+            } else {
+                btn.classList.remove('active');
+                btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12,21.35L10.55,20.03C5.4,15.36 2,12.27 2,8.5C2,5.41 4.42,3 7.5,3C9.24,3 10.91,3.81 12,5.08C13.09,3.81 14.76,3 16.5,3C19.58,3 22,5.41 22,8.5C22,12.27 18.6,15.36 13.45,20.03L12,21.35Z" /></svg> Set Default`;
+            }
+        }
+
+        function showCustomAlert(msg) {
+            const modal = document.getElementById('custom-alert');
+            const txt = document.getElementById('alert-text');
+            txt.innerText = msg;
+            modal.style.display = 'flex';
+        }
+        function closeCustomAlert() {
+            document.getElementById('custom-alert').style.display = 'none';
+        }
+
+        // --- PDF GENERATOR ---
+        async function generatePDF() {
+            paperPages.sort((a,b) => a.num - b.num);
+            
+            const allImages = Array.from(document.querySelectorAll('.hq-image'));
+            
+            const modal = document.getElementById('progress-modal');
+            const bar = document.getElementById('prog-bar');
+            const pct = document.getElementById('prog-pct');
+            const btn = document.getElementById('downloadBtn');
+            const detail = document.getElementById('prog-details');
+
+            modal.style.display = 'flex';
+            btn.disabled = true;
+            detail.innerText = "Gathering All Pages...";
+
+            await Promise.all(allImages.map(img => {
+                return new Promise(resolve => {
+                    if (img.complete) return resolve();
+                    img.loading = "eager"; 
+                    img.onload = resolve;
+                    img.onerror = resolve; 
+                });
+            }));
+
+            const validImages = allImages.filter(img => img.naturalWidth > 0);
+            
+            const doc = new jsPDF({ orientation: 'p', unit: 'mm' });
+            const PDF_WIDTH = 210;
+            detail.innerText = "Building PDF...";
+
+            try {
+                for(let i=0; i<validImages.length; i++) {
+                    const percent = Math.round(((i+1) / validImages.length) * 100);
+                    bar.style.width = `${percent}%`;
+                    pct.innerText = `${percent}%`;
+
+                    const imgEl = validImages[i];
+                    let base64 = null;
+                    
+                    try {
+                        const response = await fetch(imgEl.src, { mode: 'cors' });
+                        const blob = await response.blob();
+                        base64 = await blobToBase64(blob);
+                    } catch (e) {}
+
+                    if (!base64) {
+                        base64 = await getBase64FromCanvas(imgEl);
+                    }
+
+                    if(base64) {
+                        const props = doc.getImageProperties(base64);
+                        const pdfHeight = (props.height / props.width) * PDF_WIDTH;
+                        if (i > 0) doc.addPage([PDF_WIDTH, pdfHeight]);
+                        else doc.internal.pageSize.setHeight(pdfHeight);
+                        doc.addImage(base64, 'JPEG', 0, 0, PDF_WIDTH, pdfHeight);
+                    }
+                    
+                    await new Promise(r => setTimeout(r, 10)); 
+                }
+                
+                bar.style.width = '100%'; pct.innerText = '100%'; 
+                const dateStr = getNBTDate();
+                const fileName = `Live@8481_NBT_${currentName.replace(/\s/g,'_')}_${dateStr}${isHDMode?'_HD':''}.pdf`;
+                doc.save(fileName);
+                
+                setTimeout(() => { modal.style.display = 'none'; btn.disabled = false; bar.style.width = '0%'; }, 1500);
+
+            } catch(e) {
+                alert("PDF Error: " + e.message);
+                modal.style.display = 'none'; btn.disabled = false;
+            }
+        }
+
+        function getBase64FromCanvas(img) {
+            return new Promise(resolve => {
+                if(img.complete && img.naturalWidth) {
+                    try {
+                        const c = document.createElement('canvas');
+                        c.width = img.naturalWidth; c.height = img.naturalHeight;
+                        c.getContext('2d').drawImage(img,0,0);
+                        resolve(c.toDataURL('image/jpeg', 0.8));
+                    } catch(e){ resolve(null); }
+                } else resolve(null);
+            });
+        }
+
+        function blobToBase64(blob) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.readAsDataURL(blob);
+            });
+        }
+    </script>
+</body>
+</html>
